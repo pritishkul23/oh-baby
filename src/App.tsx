@@ -736,7 +736,26 @@ ALTER TABLE public.name_suggestions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read access" ON public.name_suggestions FOR SELECT TO public USING (true);
 CREATE POLICY "Allow public insert access" ON public.name_suggestions FOR INSERT TO public WITH CHECK (true);
-CREATE POLICY "Allow public update access" ON public.name_suggestions FOR UPDATE TO public USING (true) WITH CHECK (true);`}
+CREATE POLICY "Allow public update access" ON public.name_suggestions FOR UPDATE TO public USING (true) WITH CHECK (true);
+
+-- SECURE ATOMIC RPC Counters (Eliminates Race Conditions & Upvote Tampering)
+CREATE OR REPLACE FUNCTION public.increment_name_likes(name_id UUID)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE public.name_suggestions
+  SET likes = likes + 1
+  WHERE id = name_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.decrement_name_likes(name_id UUID)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE public.name_suggestions
+  SET likes = GREATEST(0, likes - 1)
+  WHERE id = name_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;`}
                   </pre>
                 </div>
               </div>

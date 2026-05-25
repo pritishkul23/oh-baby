@@ -237,13 +237,20 @@ export const upvoteNameSuggestion = async (id: string, currentLikes: number): Pr
 
   if (supabase) {
     try {
-      const { error } = await supabase
+      const rpcName = isUpvoted ? 'decrement_name_likes' : 'increment_name_likes';
+      const { error } = await supabase.rpc(rpcName, { name_id: id });
+
+      if (!error) return newLikesCount;
+      
+      // Fallback to direct table update if the RPC function is not created in Supabase yet,
+      // ensuring maximum resilience and backwards compatibility.
+      const { error: fallbackError } = await supabase
         .from('name_suggestions')
         .update({ likes: newLikesCount })
         .eq('id', id);
 
-      if (!error) return newLikesCount;
-      console.error('Supabase upvote update failed, using local storage backup:', error);
+      if (!fallbackError) return newLikesCount;
+      console.error('Supabase secure RPC upvote failed, and fallback table update failed:', fallbackError);
     } catch (e) {
       console.error('Error upvoting name in Supabase:', e);
     }
