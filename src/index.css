@@ -1,0 +1,139 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-cream-light: #FDFBF7;
+  --color-cream: #F9F6F0;
+  --color-cream-dark: #EFEAE0;
+
+  --color-sage-50: #F4F7F5;
+  --color-sage-100: #E6ECE8;
+  --color-sage-200: #CDDDD3;
+  --color-sage-300: #A9C4B4;
+  --color-sage: #88A795;
+  --color-sage-dark: #6A8A77;
+
+  --color-rose-50: #FAF4F5;
+  --color-rose-100: #F5E6E8;
+  --color-rose-200: #ECD2D6;
+  --color-rose-300: #DFB3B9;
+  --color-rose: #CE909A;
+  --color-rose-dark: #B46C77;
+
+  --color-babyblue-50: #F3F7FA;
+  --color-babyblue-100: #E6EFF4;
+  --color-babyblue-200: #CCE0EA;
+  --color-babyblue-300: #A3C7DC;
+  --color-babyblue: #79AECB;
+  --color-babyblue-dark: #5893B3;
+
+  --color-sand-50: #FAF8F5;
+  --color-sand-100: #F3EDE2;
+  --color-sand-200: #E8DCC7;
+  --color-sand-300: #DAC6A6;
+  --color-sand: #CBB084;
+  --color-sand-dark: #B09260;
+
+  --color-charcoal: #2C3539;
+  --color-charcoal-light: #4A5568;
+
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Outfit", Inter, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-cream-light);
+    color: var(--color-charcoal);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-serif);
+    color: var(--color-charcoal);
+  }
+}
+
+/* Custom scrollbars for boho-chic theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: var(--color-cream-light);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(203, 176, 132, 0.4);
+  border-radius: 9999px;
+  transition: background-color 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(203, 176, 132, 0.6);
+}
+
+/* Base styles for root container to handle full-screen nicely */
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom animations for voting transition and cards */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes pulse-gentle {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.95; }
+}
+
+@keyframes bounce-gentle {
+  0%, 100% { transform: translate(-50%, 0); }
+  50% { transform: translate(-50%, -6px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.float-slow {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-delayed {
+  animation: float 6s ease-in-out infinite;
+  animation-delay: 3s;
+}
+
+.pulse-gentle {
+  animation: pulse-gentle 4s ease-in-out infinite;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scaleUp {
+  animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bounce-gentle {
+  animation: bounce-gentle 2s ease-in-out infinite;
+}
