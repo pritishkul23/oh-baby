@@ -140,7 +140,7 @@ export const fetchVoteStats = async (): Promise<VoteStats> => {
 };
 
 export const submitVote = async (gender: 'boy' | 'girl', voterName: string): Promise<boolean> => {
-  // Always register in localStorage so the client can't vote again
+  // Register in localStorage so the client tracks their state
   localStorage.setItem('oh_baby_has_voted', gender);
   localStorage.setItem('oh_baby_voter_name', voterName);
 
@@ -151,9 +151,17 @@ export const submitVote = async (gender: 'boy' | 'girl', voterName: string): Pro
         .insert([{ gender, voter_name: voterName }]);
       
       if (!error) return true;
-      console.error('Supabase vote submission failed, using local storage backup:', error);
-    } catch (e) {
+      console.error('Supabase vote submission failed:', error);
+      // Clean up localStorage to prevent locked vote state
+      localStorage.removeItem('oh_baby_has_voted');
+      localStorage.removeItem('oh_baby_voter_name');
+      throw new Error(error.message || 'Failed to submit vote to database');
+    } catch (e: any) {
       console.error('Error submitting vote to Supabase:', e);
+      // Clean up localStorage to prevent locked vote state
+      localStorage.removeItem('oh_baby_has_voted');
+      localStorage.removeItem('oh_baby_voter_name');
+      throw e;
     }
   }
 
@@ -230,9 +238,11 @@ export const submitNameSuggestion = async (nameInput: string, suggestedBy: strin
       if (!error && data) {
         return data as NameSuggestion[];
       }
-      console.error('Supabase name submission failed, using local storage:', error);
-    } catch (e) {
+      console.error('Supabase name submission failed:', error);
+      throw new Error(error?.message || 'Failed to submit name to database');
+    } catch (e: any) {
       console.error('Error submitting name to Supabase:', e);
+      throw e;
     }
   }
 
@@ -284,8 +294,10 @@ export const upvoteNameSuggestion = async (id: string, currentLikes: number): Pr
 
       if (!fallbackError) return newLikesCount;
       console.error('Supabase secure RPC upvote failed, and fallback table update failed:', fallbackError);
-    } catch (e) {
+      throw new Error(fallbackError.message || 'Failed to like name in database');
+    } catch (e: any) {
       console.error('Error upvoting name in Supabase:', e);
+      throw e;
     }
   }
 
