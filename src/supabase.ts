@@ -112,18 +112,6 @@ export const fetchVoteStats = async (): Promise<VoteStats> => {
         const b = boyVotes.length;
         const g = girlVotes.length;
 
-        // Seed with some initial aesthetic poll values if there are 0 votes, 
-        // just so the initial UI isn't completely empty
-        if (b === 0 && g === 0) {
-          return { 
-            boy: 8, 
-            girl: 10, 
-            total: 18,
-            boyVoters: ['Uncle Jack', 'Aunt Sarah', 'Papa'],
-            girlVoters: ['Grandma Ellen', 'Cousin Leo', 'Mama']
-          };
-        }
-
         return {
           boy: b,
           girl: g,

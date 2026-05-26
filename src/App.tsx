@@ -69,6 +69,12 @@ function App() {
     try {
       const voteStats = await fetchVoteStats();
       setStats(voteStats);
+      
+      // Self-clearing vote mechanism: If stats drop to 0, automatically reset vote state
+      if (voteStats.total === 0) {
+        localStorage.removeItem('oh_baby_has_voted');
+        setUserVote(null);
+      }
     } catch (e) {
       showToast('Could not fetch latest voting stats.', 'error');
     }
@@ -92,14 +98,29 @@ function App() {
     const initializeData = async () => {
       setIsLoading(true);
       
-      // Load current user vote status
-      setUserVote(getUserVote());
-      
       // Load liked list
       setUpvotedIds(getUpvotedNames());
 
       // Load stats and names
-      await Promise.all([loadStats(), loadNames()]);
+      try {
+        const [voteStats, suggestions] = await Promise.all([
+          fetchVoteStats(),
+          fetchNameSuggestions()
+        ]);
+        
+        setStats(voteStats);
+        setNames(suggestions);
+
+        let currentVote = getUserVote();
+        // Self-clearing on load: If total votes in database is 0, clear local vote badge
+        if (voteStats.total === 0 && currentVote !== null) {
+          localStorage.removeItem('oh_baby_has_voted');
+          currentVote = null;
+        }
+        setUserVote(currentVote);
+      } catch (e) {
+        showToast('Error loading initial data.', 'error');
+      }
       
       setIsLoading(false);
     };
@@ -111,10 +132,10 @@ function App() {
     // ==========================================
     if (supabase) {
       const client = supabase;
-      // Subscribe to gender votes inserts
+      // Subscribe to all changes (inserts, deletes/resets) on gender votes
       const votesChannel = client
         .channel('realtime_votes')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gender_votes' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'gender_votes' }, () => {
           loadStats();
         })
         .subscribe();
