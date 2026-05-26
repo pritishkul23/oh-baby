@@ -68,13 +68,14 @@ function App() {
   const loadStats = async () => {
     try {
       const voteStats = await fetchVoteStats();
-      setStats(voteStats);
       
-      // Self-clearing vote mechanism: If stats drop to 0, automatically reset vote state
-      if (voteStats.total === 0) {
+      // Only reset local vote badge if the database went from having votes to being completely cleared (admin reset)
+      if (stats.total > 0 && voteStats.total === 0) {
         localStorage.removeItem('oh_baby_has_voted');
         setUserVote(null);
       }
+      
+      setStats(voteStats);
     } catch (e) {
       showToast('Could not fetch latest voting stats.', 'error');
     }
