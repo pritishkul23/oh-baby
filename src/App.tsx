@@ -11,7 +11,8 @@ import {
   Info, 
   AlertCircle,
   Search,
-  SlidersHorizontal
+  SlidersHorizontal,
+  User
 } from 'lucide-react';
 import { 
   fetchVoteStats, 
@@ -28,13 +29,19 @@ import type { NameSuggestion, VoteStats } from './supabase';
 
 function App() {
   // Database / Connection State
-  const [stats, setStats] = useState<VoteStats>({ boy: 0, girl: 0, total: 0 });
+  const [stats, setStats] = useState<VoteStats>({ boy: 0, girl: 0, total: 0, boyVoters: [], girlVoters: [] });
   const [names, setNames] = useState<NameSuggestion[]>([]);
   const [upvotedIds, setUpvotedIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
   const [isSubmittingName, setIsSubmittingName] = useState(false);
   
+  // User Profile Name State
+  const [userName, setUserName] = useState(() => {
+    return localStorage.getItem('oh_baby_user_name') || '';
+  });
+  const [userNameError, setUserNameError] = useState('');
+
   // Voting State
   const [userVote, setUserVote] = useState<'boy' | 'girl' | null>(null);
   
@@ -76,6 +83,11 @@ function App() {
     }
   };
 
+  // Sync username to LocalStorage
+  useEffect(() => {
+    localStorage.setItem('oh_baby_user_name', userName);
+  }, [userName]);
+
   useEffect(() => {
     const initializeData = async () => {
       setIsLoading(true);
@@ -107,7 +119,7 @@ function App() {
         })
         .subscribe();
 
-      // Subscribe to name suggestions changes (inserts, updates, deletes)
+      // Subscribe to name suggestions changes
       const namesChannel = client
         .channel('realtime_names')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'name_suggestions' }, () => {
@@ -234,16 +246,27 @@ function App() {
 
   const handleVote = async (gender: 'boy' | 'girl') => {
     if (userVote) return;
+    
+    // Enforce name capture
+    const trimmedVoterName = userName.trim();
+    if (!trimmedVoterName) {
+      setUserNameError('Please introduce yourself by entering your name first!');
+      document.getElementById('user-name-input')?.focus();
+      showToast('Name is required to cast a prediction.', 'error');
+      return;
+    }
+
+    setUserNameError('');
     setIsSubmittingVote(true);
     try {
-      const success = await submitVote(gender);
+      const success = await submitVote(gender, trimmedVoterName);
       if (success) {
         setUserVote(gender);
         // Refresh local stats state
         await loadStats();
         // Trigger confetti!
         setShowConfetti(true);
-        showToast(`Thank you! Your vote for Team ${gender === 'boy' ? 'Boy 💙' : 'Girl 💗'} was registered!`, 'success');
+        showToast(`Thank you, ${trimmedVoterName}! Your prediction for Team ${gender === 'boy' ? 'Boy 💙' : 'Girl 💗'} has been counted!`, 'success');
       } else {
         showToast('Something went wrong submitting your vote.', 'error');
       }
@@ -256,20 +279,25 @@ function App() {
 
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Enforce name capture
+    const trimmedSuggestedBy = userName.trim();
+    if (!trimmedSuggestedBy) {
+      setUserNameError('Please introduce yourself by entering your name first!');
+      document.getElementById('user-name-input')?.focus();
+      showToast('Name is required to suggest baby names.', 'error');
+      return;
+    }
+
     const nameToSubmit = newName.trim();
     
     if (!nameToSubmit) {
       setNameError('Name cannot be empty.');
       return;
     }
-    
-    if (nameToSubmit.length > 30) {
-      setNameError('Please enter a shorter name.');
-      return;
-    }
 
-    if (!/^[A-Za-z\s-]+$/.test(nameToSubmit)) {
-      setNameError('Name should only contain letters, spaces, or hyphens.');
+    if (!/^[A-Za-z\s,-]+$/.test(nameToSubmit)) {
+      setNameError('Please use letters, spaces, hyphens, or commas.');
       return;
     }
 
@@ -277,12 +305,13 @@ function App() {
     setIsSubmittingName(true);
 
     try {
-      const addedName = await submitNameSuggestion(nameToSubmit);
-      if (addedName) {
+      const addedNames = await submitNameSuggestion(nameToSubmit, trimmedSuggestedBy);
+      if (addedNames && addedNames.length > 0) {
         setNewName('');
         // Reload list or append locally
         await loadNames();
-        showToast(`✨ "${addedName.name}" was successfully added!`, 'success');
+        const namesString = addedNames.map(n => n.name).join(', ');
+        showToast(`✨ Added: "${namesString}" successfully!`, 'success');
       } else {
         showToast('Failed to add the name suggestion.', 'error');
       }
@@ -295,6 +324,10 @@ function App() {
 
   const handleLikeToggle = async (nameObj: NameSuggestion) => {
     const isUpvoted = upvotedIds.includes(nameObj.id);
+    if (isUpvoted) {
+      showToast('You have already voted for this name!', 'info');
+      return;
+    }
     
     try {
       const updatedLikes = await upvoteNameSuggestion(nameObj.id, nameObj.likes);
@@ -304,16 +337,11 @@ function App() {
         prevNames.map(n => n.id === nameObj.id ? { ...n, likes: updatedLikes } : n)
       );
 
-      // Toggle in local array
-      if (isUpvoted) {
-        setUpvotedIds(prev => prev.filter(id => id !== nameObj.id));
-        showToast(`Removed like for ${nameObj.name}.`, 'info');
-      } else {
-        setUpvotedIds(prev => [...prev, nameObj.id]);
-        showToast(`Liked ${nameObj.name}! 💖`, 'success');
-      }
+      // Append in local array
+      setUpvotedIds(prev => [...prev, nameObj.id]);
+      showToast(`Voted for ${nameObj.name}! 💖`, 'success');
     } catch (e) {
-      showToast('Failed to update like status.', 'error');
+      showToast('Failed to register vote.', 'error');
     }
   };
 
@@ -393,6 +421,40 @@ function App() {
           ========================================== */}
       <main className="w-full max-w-md px-4 pb-20 flex-grow z-10 flex flex-col gap-6">
         
+        {/* ==========================================
+            SECTION 0: USER PROFILE / IDENTIFICATION
+            ========================================== */}
+        <section className="bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-sand-100 transition-all duration-300">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="user-name-input" className="text-xs font-bold text-sand-dark tracking-wider block font-sans uppercase flex items-center gap-1">
+              <User className="w-3.5 h-3.5 text-sand-dark" />
+              Introduce Yourself
+            </label>
+            <input
+              type="text"
+              id="user-name-input"
+              value={userName}
+              onChange={(e) => {
+                setUserName(e.target.value);
+                if (userNameError) setUserNameError('');
+              }}
+              placeholder="Enter your name (e.g. Aunt Sarah, Cousin Leo)"
+              className={`w-full bg-cream-light border ${userNameError ? 'border-rose-300 ring-1 ring-rose-300' : 'border-sand-200'} rounded-full py-2.5 px-4 text-xs font-semibold text-charcoal placeholder:text-charcoal-light/40 focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage transition-all`}
+              maxLength={40}
+            />
+            {userNameError ? (
+              <span className="text-[10px] text-rose-dark font-bold ml-2 mt-1 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" />
+                {userNameError}
+              </span>
+            ) : (
+              <span className="text-[9px] text-charcoal-light/60 font-semibold ml-2">
+                This is how your name suggestions and gender predictions will be labeled!
+              </span>
+            )}
+          </div>
+        </section>
+
         {/* ==========================================
             SECTION 1: GENDER VOTING / PREDICTOR
             ========================================== */}
@@ -482,8 +544,32 @@ function App() {
                   />
                 </div>
 
+                {/* Voter lists! */}
+                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-sand-100/50 text-[11px]">
+                  <div className="space-y-1">
+                    <span className="font-bold text-[9px] text-babyblue-dark tracking-wider block font-sans uppercase">💙 Team Boy Voters</span>
+                    <div className="text-charcoal-light font-medium max-h-24 overflow-y-auto pr-1 text-[10px] leading-relaxed break-words">
+                      {stats.boyVoters && stats.boyVoters.length > 0 ? (
+                        stats.boyVoters.join(', ')
+                      ) : (
+                        <span className="italic text-charcoal-light/40">No votes yet</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-right border-l border-sand-100/50 pl-4">
+                    <span className="font-bold text-[9px] text-rose-dark tracking-wider block font-sans uppercase">💗 Team Girl Voters</span>
+                    <div className="text-charcoal-light font-medium max-h-24 overflow-y-auto pr-1 text-[10px] leading-relaxed break-words">
+                      {stats.girlVoters && stats.girlVoters.length > 0 ? (
+                        stats.girlVoters.join(', ')
+                      ) : (
+                        <span className="italic text-charcoal-light/40">No votes yet</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Total Stats Footer */}
-                <p className="text-[10px] text-center text-charcoal-light font-semibold">
+                <p className="text-[10px] text-center text-charcoal-light/70 font-semibold pt-1">
                   {stats.total} total predictions cast by friends & family
                 </p>
               </div>
@@ -508,44 +594,51 @@ function App() {
           </div>
 
           {/* Minimalist Centered Input Form */}
-          <form onSubmit={handleNameSubmit} className="relative">
-            <div className="flex flex-col gap-1">
-              <div className="relative flex items-center">
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => {
-                    setNewName(e.target.value);
-                    if (nameError) setNameError('');
-                  }}
-                  placeholder="Suggest a name..."
-                  className={`w-full bg-cream-light border ${nameError ? 'border-rose-300' : 'border-sand-200'} rounded-full py-3 pl-5 pr-14 text-sm font-medium text-charcoal placeholder:text-charcoal-light/40 focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage transition-all`}
-                  disabled={isSubmittingName}
-                  maxLength={30}
-                  id="name-input"
-                />
-                <button
-                  type="submit"
-                  disabled={isSubmittingName}
-                  className="absolute right-1.5 bg-sage hover:bg-sage-dark text-white rounded-full p-2.5 transition-colors disabled:opacity-50 shadow-sm"
-                  id="submit-name-btn"
-                  title="Submit name"
-                >
-                  {isSubmittingName ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </button>
+          <div className="flex flex-col gap-2">
+            {/* Instruction about adding multiple names */}
+            <p className="text-[10px] text-charcoal-light font-semibold flex items-center gap-1.5 bg-cream/50 px-3.5 py-2 rounded-2xl border border-sand-100/60 leading-normal">
+              <Info className="w-3.5 h-3.5 text-sand-dark flex-shrink-0" />
+              <span>💡 Add multiple names at once by separating them with commas (e.g. <em>Noah, Lily, Joy</em>)!</span>
+            </p>
+
+            <form onSubmit={handleNameSubmit} className="relative">
+              <div className="flex flex-col gap-1">
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => {
+                      setNewName(e.target.value);
+                      if (nameError) setNameError('');
+                    }}
+                    placeholder="Suggest name(s)..."
+                    className={`w-full bg-cream-light border ${nameError ? 'border-rose-300' : 'border-sand-200'} rounded-full py-3 pl-5 pr-14 text-sm font-medium text-charcoal placeholder:text-charcoal-light/40 focus:outline-none focus:border-sage focus:ring-1 focus:ring-sage transition-all`}
+                    disabled={isSubmittingName}
+                    id="name-input"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSubmittingName}
+                    className="absolute right-1.5 bg-sage hover:bg-sage-dark text-white rounded-full p-2.5 transition-colors disabled:opacity-50 shadow-sm"
+                    id="submit-name-btn"
+                    title="Submit name"
+                  >
+                    {isSubmittingName ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+                {nameError && (
+                  <span className="text-[10px] text-rose-dark font-bold ml-4 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {nameError}
+                  </span>
+                )}
               </div>
-              {nameError && (
-                <span className="text-[10px] text-rose-dark font-semibold ml-4 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  {nameError}
-                </span>
-              )}
-            </div>
-          </form>
+            </form>
+          </div>
 
           {/* Search, Sort, Filter Submenu */}
           <div className="flex flex-col gap-3 border-t border-sand-100/50 pt-4">
@@ -613,26 +706,37 @@ function App() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3 max-h-[380px] overflow-y-auto pr-1">
               {filteredAndSortedNames.map((nameObj) => {
                 const isLiked = upvotedIds.includes(nameObj.id);
                 return (
                   <div
                     key={nameObj.id}
-                    className="group bg-cream-light/40 hover:bg-white border border-sand-100 hover:border-sand-200/80 rounded-2xl p-3 flex items-center justify-between shadow-sm hover:shadow transition-all duration-300 animate-fadeIn"
+                    className="group bg-cream-light/40 hover:bg-white border border-sand-100 hover:border-sand-200/80 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-sm hover:shadow transition-all duration-300 animate-fadeIn"
                   >
-                    <span className="font-serif font-semibold text-sm text-charcoal truncate pr-2">
-                      {nameObj.name}
-                    </span>
+                    <div className="flex flex-col min-w-0 flex-grow">
+                      {/* Name displays with word breaking enabled to support long names */}
+                      <span className="font-serif font-semibold text-sm text-charcoal break-words leading-tight">
+                        {nameObj.name}
+                      </span>
+                      <span className="text-[9px] text-charcoal-light/60 font-semibold mt-0.5 block truncate" title={`Suggested by ${nameObj.suggested_by}`}>
+                        by {nameObj.suggested_by || 'Anonymous'}
+                      </span>
+                    </div>
                     
                     <button
                       onClick={() => handleLikeToggle(nameObj)}
-                      className={`flex items-center gap-1 py-1 px-2 rounded-full border text-[10px] font-bold transition-all active:scale-90 ${isLiked ? 'bg-rose-50 border-rose-200 text-rose-dark' : 'bg-white border-sand-100 text-charcoal-light hover:border-rose-200 group-hover:bg-rose-50/20'}`}
-                      aria-label={`Like ${nameObj.name}`}
+                      disabled={isLiked}
+                      className={`flex items-center gap-1 py-1.5 px-2.5 rounded-full border text-[10px] font-bold transition-all ${
+                        isLiked 
+                          ? 'bg-rose-50/70 border-rose-100 text-rose-dark cursor-default' 
+                          : 'bg-white border-sand-100 text-charcoal-light hover:border-rose-200 group-hover:bg-rose-50/20 active:scale-95'
+                      }`}
+                      aria-label={isLiked ? `${nameObj.name} liked` : `Like ${nameObj.name}`}
                       id={`like-btn-${nameObj.id}`}
                     >
                       <Heart 
-                        className={`w-3.5 h-3.5 transition-all ${isLiked ? 'fill-rose text-rose stroke-[2.5px] scale-110' : 'text-charcoal-light/60 group-hover:text-rose'}`} 
+                        className={`w-3.5 h-3.5 transition-all ${isLiked ? 'fill-rose text-rose stroke-[2.5px] scale-105' : 'text-charcoal-light/60 group-hover:text-rose'}`} 
                       />
                       <span>{nameObj.likes}</span>
                     </button>
@@ -717,6 +821,7 @@ function App() {
 {`CREATE TABLE IF NOT EXISTS public.gender_votes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   gender VARCHAR(10) NOT NULL CHECK (gender IN ('boy', 'girl')),
+  voter_name VARCHAR(100) NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
@@ -728,6 +833,7 @@ CREATE POLICY "Allow public insert access" ON public.gender_votes FOR INSERT TO 
 CREATE TABLE IF NOT EXISTS public.name_suggestions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
+  suggested_by VARCHAR(100) NOT NULL,
   likes INTEGER DEFAULT 0 NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
@@ -744,15 +850,6 @@ RETURNS VOID AS $$
 BEGIN
   UPDATE public.name_suggestions
   SET likes = likes + 1
-  WHERE id = name_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE OR REPLACE FUNCTION public.decrement_name_likes(name_id UUID)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE public.name_suggestions
-  SET likes = GREATEST(0, likes - 1)
   WHERE id = name_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;`}

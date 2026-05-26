@@ -13,9 +13,11 @@ export const supabase = supabaseUrl && supabaseAnonKey
 export const isSupabaseConfigured = !!supabase;
 
 // Define Types
+// Define Types
 export interface NameSuggestion {
   id: string;
   name: string;
+  suggested_by: string;
   likes: number;
   created_at: string;
 }
@@ -24,6 +26,13 @@ export interface VoteStats {
   boy: number;
   girl: number;
   total: number;
+  boyVoters: string[];
+  girlVoters: string[];
+}
+
+export interface GenderVote {
+  gender: 'boy' | 'girl';
+  voter_name: string;
 }
 
 // Local Storage Fallback Keys
@@ -34,9 +43,29 @@ const LOCAL_STORAGE_NAMES_KEY = 'oh_baby_local_names';
 // fallback local helpers
 // ==========================================
 
-const getLocalVotes = (): string[] => {
+const getLocalVotes = (): GenderVote[] => {
   try {
-    return JSON.parse(localStorage.getItem(LOCAL_STORAGE_VOTES_KEY) || '[]');
+    const raw = localStorage.getItem(LOCAL_STORAGE_VOTES_KEY);
+    if (!raw) {
+      // Seed with some cute initial votes
+      const initialMockVotes: GenderVote[] = [
+        { gender: 'boy', voter_name: 'Uncle Jack' },
+        { gender: 'boy', voter_name: 'Aunt Sarah' },
+        { gender: 'girl', voter_name: 'Grandma Ellen' },
+        { gender: 'girl', voter_name: 'Cousin Leo' },
+        { gender: 'girl', voter_name: 'Mama' },
+        { gender: 'boy', voter_name: 'Papa' },
+      ];
+      localStorage.setItem(LOCAL_STORAGE_VOTES_KEY, JSON.stringify(initialMockVotes));
+      return initialMockVotes;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed.map((v: any) => {
+      if (typeof v === 'string') {
+        return { gender: v as 'boy' | 'girl', voter_name: 'Anonymous Friend' };
+      }
+      return v;
+    });
   } catch {
     return [];
   }
@@ -48,12 +77,12 @@ const getLocalNames = (): NameSuggestion[] => {
     if (!names) {
       // Return some cute mock names initially to make the site look populated and beautiful!
       const initialMockNames: NameSuggestion[] = [
-        { id: '1', name: 'Aurelia', likes: 18, created_at: new Date(Date.now() - 3600000 * 24).toISOString() },
-        { id: '2', name: 'Oliver', likes: 15, created_at: new Date(Date.now() - 3600000 * 12).toISOString() },
-        { id: '3', name: 'Hazel', likes: 24, created_at: new Date(Date.now() - 3600000 * 8).toISOString() },
-        { id: '4', name: 'Milo', likes: 11, created_at: new Date(Date.now() - 3600000 * 4).toISOString() },
-        { id: '5', name: 'Freya', likes: 29, created_at: new Date(Date.now() - 3600000 * 2).toISOString() },
-        { id: '6', name: 'Leo', likes: 9, created_at: new Date().toISOString() },
+        { id: '1', name: 'Aurelia', suggested_by: 'Grandma Ellen', likes: 18, created_at: new Date(Date.now() - 3600000 * 24).toISOString() },
+        { id: '2', name: 'Oliver', suggested_by: 'Uncle Jack', likes: 15, created_at: new Date(Date.now() - 3600000 * 12).toISOString() },
+        { id: '3', name: 'Hazel', suggested_by: 'Aunt Sarah', likes: 24, created_at: new Date(Date.now() - 3600000 * 8).toISOString() },
+        { id: '4', name: 'Milo', suggested_by: 'Cousin Leo', likes: 11, created_at: new Date(Date.now() - 3600000 * 4).toISOString() },
+        { id: '5', name: 'Freya', suggested_by: 'Mama', likes: 29, created_at: new Date(Date.now() - 3600000 * 2).toISOString() },
+        { id: '6', name: 'Leo', suggested_by: 'Papa', likes: 9, created_at: new Date().toISOString() },
       ];
       localStorage.setItem(LOCAL_STORAGE_NAMES_KEY, JSON.stringify(initialMockNames));
       return initialMockNames;
@@ -71,34 +100,38 @@ const getLocalNames = (): NameSuggestion[] => {
 export const fetchVoteStats = async (): Promise<VoteStats> => {
   if (supabase) {
     try {
-      // Fetch boys count
-      const { count: boyCount, error: boyError } = await supabase
+      const { data, error } = await supabase
         .from('gender_votes')
-        .select('*', { count: 'exact', head: true })
-        .eq('gender', 'boy');
+        .select('*');
 
-      // Fetch girls count
-      const { count: girlCount, error: girlError } = await supabase
-        .from('gender_votes')
-        .select('*', { count: 'exact', head: true })
-        .eq('gender', 'girl');
+      if (error) throw new Error('Failed to fetch from Supabase');
 
-      if (boyError || girlError) throw new Error('Failed to fetch from Supabase');
+      if (data) {
+        const boyVotes = data.filter((v: any) => v.gender === 'boy');
+        const girlVotes = data.filter((v: any) => v.gender === 'girl');
+        const b = boyVotes.length;
+        const g = girlVotes.length;
 
-      const b = boyCount || 0;
-      const g = girlCount || 0;
+        // Seed with some initial aesthetic poll values if there are 0 votes, 
+        // just so the initial UI isn't completely empty
+        if (b === 0 && g === 0) {
+          return { 
+            boy: 8, 
+            girl: 10, 
+            total: 18,
+            boyVoters: ['Uncle Jack', 'Aunt Sarah', 'Papa'],
+            girlVoters: ['Grandma Ellen', 'Cousin Leo', 'Mama']
+          };
+        }
 
-      // Seed with some initial aesthetic poll values if there are 0 votes, 
-      // just so the initial UI isn't completely empty (e.g., 5-3 start)
-      if (b === 0 && g === 0) {
-        return { boy: 8, girl: 10, total: 18 };
+        return {
+          boy: b,
+          girl: g,
+          total: b + g,
+          boyVoters: boyVotes.map((v: any) => v.voter_name || 'Anonymous Friend'),
+          girlVoters: girlVotes.map((v: any) => v.voter_name || 'Anonymous Friend')
+        };
       }
-
-      return {
-        boy: b,
-        girl: g,
-        total: b + g
-      };
     } catch (e) {
       console.warn('Supabase fetch failed, using local storage fallback.', e);
     }
@@ -106,28 +139,28 @@ export const fetchVoteStats = async (): Promise<VoteStats> => {
 
   // Fallback Local Storage Mode
   const votes = getLocalVotes();
-  const baseBoy = 8;
-  const baseGirl = 10;
-  
-  const localBoy = votes.filter(v => v === 'boy').length;
-  const localGirl = votes.filter(v => v === 'girl').length;
+  const boyVotes = votes.filter(v => v.gender === 'boy');
+  const girlVotes = votes.filter(v => v.gender === 'girl');
 
   return {
-    boy: baseBoy + localBoy,
-    girl: baseGirl + localGirl,
-    total: baseBoy + baseGirl + localBoy + localGirl
+    boy: boyVotes.length,
+    girl: girlVotes.length,
+    total: votes.length,
+    boyVoters: boyVotes.map(v => v.voter_name),
+    girlVoters: girlVotes.map(v => v.voter_name)
   };
 };
 
-export const submitVote = async (gender: 'boy' | 'girl'): Promise<boolean> => {
+export const submitVote = async (gender: 'boy' | 'girl', voterName: string): Promise<boolean> => {
   // Always register in localStorage so the client can't vote again
   localStorage.setItem('oh_baby_has_voted', gender);
+  localStorage.setItem('oh_baby_voter_name', voterName);
 
   if (supabase) {
     try {
       const { error } = await supabase
         .from('gender_votes')
-        .insert([{ gender }]);
+        .insert([{ gender, voter_name: voterName }]);
       
       if (!error) return true;
       console.error('Supabase vote submission failed, using local storage backup:', error);
@@ -138,7 +171,7 @@ export const submitVote = async (gender: 'boy' | 'girl'): Promise<boolean> => {
 
   // Fallback Local Storage Mode
   const votes = getLocalVotes();
-  votes.push(gender);
+  votes.push({ gender, voter_name: voterName });
   localStorage.setItem(LOCAL_STORAGE_VOTES_KEY, JSON.stringify(votes));
   return true;
 };
@@ -175,26 +208,39 @@ export const fetchNameSuggestions = async (): Promise<NameSuggestion[]> => {
   return [...names].sort((a, b) => b.likes - a.likes || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 };
 
-export const submitNameSuggestion = async (name: string): Promise<NameSuggestion | null> => {
-  const trimmedName = name.trim();
-  if (!trimmedName) return null;
+export const submitNameSuggestion = async (nameInput: string, suggestedBy: string): Promise<NameSuggestion[] | null> => {
+  const namesList = nameInput
+    .split(',')
+    .map(n => n.trim())
+    .filter(n => n.length > 0);
 
-  // Capitalize name nicely (e.g. "oliver" -> "Oliver", "mary-jane" -> "Mary-Jane")
-  const formattedName = trimmedName
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
+  if (namesList.length === 0) return null;
+
+  const formattedNames = namesList.map(name => {
+    // Capitalize name nicely (e.g. "oliver" -> "Oliver", "mary-jane" -> "Mary-Jane")
+    return name
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  });
+
+  const suggestedByFormatted = suggestedBy.trim() || 'Anonymous';
 
   if (supabase) {
     try {
+      const recordsToInsert = formattedNames.map(formattedName => ({
+        name: formattedName,
+        suggested_by: suggestedByFormatted,
+        likes: 0
+      }));
+
       const { data, error } = await supabase
         .from('name_suggestions')
-        .insert([{ name: formattedName, likes: 0 }])
-        .select()
-        .single();
+        .insert(recordsToInsert)
+        .select();
 
       if (!error && data) {
-        return data as NameSuggestion;
+        return data as NameSuggestion[];
       }
       console.error('Supabase name submission failed, using local storage:', error);
     } catch (e) {
@@ -204,46 +250,45 @@ export const submitNameSuggestion = async (name: string): Promise<NameSuggestion
 
   // Fallback Local Storage Mode
   const names = getLocalNames();
-  const newName: NameSuggestion = {
-    id: Math.random().toString(36).substring(2, 9),
-    name: formattedName,
-    likes: 0,
-    created_at: new Date().toISOString()
-  };
-  names.push(newName);
+  const addedNames: NameSuggestion[] = [];
+
+  formattedNames.forEach(formattedName => {
+    const newName: NameSuggestion = {
+      id: Math.random().toString(36).substring(2, 9),
+      name: formattedName,
+      suggested_by: suggestedByFormatted,
+      likes: 0,
+      created_at: new Date().toISOString()
+    };
+    names.push(newName);
+    addedNames.push(newName);
+  });
+
   localStorage.setItem(LOCAL_STORAGE_NAMES_KEY, JSON.stringify(names));
-  return newName;
+  return addedNames;
 };
 
 export const upvoteNameSuggestion = async (id: string, currentLikes: number): Promise<number> => {
-  // Track upvoted items in localStorage so they can only toggle/upvote once per session
+  // Track upvoted items in localStorage so they can only upvote once
   const upvotedNames = JSON.parse(localStorage.getItem('oh_baby_upvoted_names') || '[]');
   const isUpvoted = upvotedNames.includes(id);
 
-  let newLikesCount = currentLikes;
-  let nextUpvotedList = [...upvotedNames];
-
   if (isUpvoted) {
-    // Unlike
-    newLikesCount = Math.max(0, currentLikes - 1);
-    nextUpvotedList = nextUpvotedList.filter(nameId => nameId !== id);
-  } else {
-    // Like
-    newLikesCount = currentLikes + 1;
-    nextUpvotedList.push(id);
+    // Already voted, do nothing (strict one user one vote)
+    return currentLikes;
   }
 
+  const newLikesCount = currentLikes + 1;
+  const nextUpvotedList = [...upvotedNames, id];
   localStorage.setItem('oh_baby_upvoted_names', JSON.stringify(nextUpvotedList));
 
   if (supabase) {
     try {
-      const rpcName = isUpvoted ? 'decrement_name_likes' : 'increment_name_likes';
-      const { error } = await supabase.rpc(rpcName, { name_id: id });
+      const { error } = await supabase.rpc('increment_name_likes', { name_id: id });
 
       if (!error) return newLikesCount;
       
-      // Fallback to direct table update if the RPC function is not created in Supabase yet,
-      // ensuring maximum resilience and backwards compatibility.
+      // Fallback to direct table update if RPC is missing
       const { error: fallbackError } = await supabase
         .from('name_suggestions')
         .update({ likes: newLikesCount })
